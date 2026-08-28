@@ -47,5 +47,15 @@ apt_packages:
   - make       # optional: fuer das Makefile, run.sh braucht es nicht
 
 # --- Nerd Font -----------------------------------------------
+# Wird unter WSL automatisch NUR fuer diesen Windows-User installiert (kein
+# Admin/UAC) und NUR im WSL-Terminalprofil aktiviert (nicht PowerShell/cmd).
 nerd_font_name: CaskaydiaCove
 nerd_font_url: https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CascadiaCode.zip
+
+# Dateisuffix der Variante im Release-Zip. Terminals brauchen feste Zeichenbreite
+# fuer Icons -> Mono. (Alternativen im Zip: "NerdFont" = proportional, "NerdFontPropo".)
+nerd_font_variant_suffix: NerdFontMono
+
+# Substring, gegen Profilname/-quelle in der Windows-Terminal settings.json geprueft
+# (case-insensitive) - nur treffende Profile bekommen die Font gesetzt.
+wsl_terminal_profile_match: Ubuntu

@@ -1,6 +1,9 @@
 ---
-# Unter WSL kann die Font NICHT in Linux installiert werden -
-# die Darstellung macht Windows Terminal. Wir legen sie nur bereit.
+# Unter WSL kann die Font nicht in Linux "installiert" werden - die Darstellung
+# macht Windows Terminal. Wir installieren sie deshalb Windows-seitig, aber:
+#   - NUR fuer den aktuellen Windows-User (kein Admin/UAC, kein Rechtsklick)
+#   - NUR im WSL-Terminalprofil (font.face nur dort, PowerShell/cmd unberuehrt)
+# Beides vollautomatisch, kein manueller Schritt mehr noetig.
 
 - name: WSL erkennen
   ansible.builtin.command: grep -qi microsoft /proc/version
@@ -21,18 +24,106 @@
     remote_src: true
     creates: "{{ ansible_user_dir }}/nerd-fonts/LICENSE"
 
-- name: Anleitung ausgeben (WSL)
-  ansible.builtin.debug:
-    msg:
-      - "Font liegt in: {{ ansible_user_dir }}/nerd-fonts"
-      - "WSL erkannt - die Font muss WINDOWS-seitig installiert werden:"
-      - "  1. explorer.exe {{ ansible_user_dir }}/nerd-fonts"
-      - "  2. .ttf-Dateien markieren -> Rechtsklick -> 'Fuer alle Benutzer installieren'"
-      - "  3. Windows Terminal -> Einstellungen -> Ubuntu-Profil -> Erscheinungsbild"
-      - "     -> Schriftart: {{ nerd_font_name }} Nerd Font"
-  when: is_wsl.rc == 0
-
 - name: Fonts registrieren (natives Linux)
   ansible.builtin.command: fc-cache -f
   when: is_wsl.rc != 0
   changed_when: true
+
+- name: WSL-seitige Windows-Integration
+  when: is_wsl.rc == 0
+  block:
+    - name: Windows-Benutzername ermitteln
+      ansible.builtin.shell: |
+        set -o pipefail
+        ls /mnt/c/Users 2>/dev/null | grep -viE '^(public|default|all users|defaultuser0)$' | head -1
+      args:
+        executable: /bin/bash
+      register: win_user
+      changed_when: false
+      failed_when: false
+
+    - name: PowerShell-Installer rendern
+      ansible.builtin.template:
+        src: install-fonts.ps1.j2
+        dest: "{{ ansible_user_dir }}/nerd-fonts/install-fonts.ps1"
+        mode: "0644"
+      when: win_user.stdout | trim | length > 0
+
+    - name: UNC-Pfade fuer Windows ermitteln
+      ansible.builtin.shell: |
+        set -o pipefail
+        echo "SCRIPT=$(wslpath -w "{{ ansible_user_dir }}/nerd-fonts/install-fonts.ps1")"
+        echo "SOURCE=$(wslpath -w "{{ ansible_user_dir }}/nerd-fonts")"
+      args:
+        executable: /bin/bash
+      register: unc_paths
+      changed_when: false
+      when: win_user.stdout | trim | length > 0
+
+    - name: UNC-Pfade als Facts setzen
+      ansible.builtin.set_fact:
+        ps1_unc: "{{ unc_paths.stdout_lines[0].split('=', 1)[1] }}"
+        fonts_unc: "{{ unc_paths.stdout_lines[1].split('=', 1)[1] }}"
+      when: win_user.stdout | trim | length > 0
+
+    - name: Font per-User installieren (Registry + AddFontResourceW)
+      # argv statt cmd-String: cmd als String parst das Modul mit shlex, das
+      # Backslashes in UNC-Windows-Pfaden (\\wsl.localhost\...) verstuemmelt,
+      # bevor PowerShell sie zu sehen bekommt. argv umgeht jedes Shell-Parsing.
+      ansible.builtin.command:
+        argv:
+          - powershell.exe
+          - -NoProfile
+          - -ExecutionPolicy
+          - Bypass
+          - -File
+          - "{{ ps1_unc }}"
+          - -SourceDir
+          - "{{ fonts_unc }}"
+      register: font_install
+      changed_when: true
+      when: win_user.stdout | trim | length > 0
+
+    - name: Ergebnisdatei des Installers pruefen
+      ansible.builtin.stat:
+        path: "{{ ansible_user_dir }}/nerd-fonts/family-name.txt"
+      register: family_file
+      when: win_user.stdout | trim | length > 0 and font_install is succeeded
+
+    - name: Tatsaechlich vergebenen Font-Familiennamen einlesen
+      # Nicht aus stdout parsen - powershell.exe liefert je nach Aufrufkontext eine
+      # Windows-Codepage statt UTF-8 zurueck, was der WSL/Ansible-Interop schon
+      # kaputte Bytes in der stdout-Erfassung beschert hat. Das PS1-Skript schreibt
+      # den Namen deshalb in eine Datei, die hier als normale UTF-8-Datei gelesen wird.
+      ansible.builtin.set_fact:
+        nerd_font_family: "{{ lookup('file', ansible_user_dir + '/nerd-fonts/family-name.txt') | trim }}"
+      when: family_file is defined and family_file.stat.exists
+
+    - name: Font nur im WSL-Terminalprofil setzen (Windows Terminal settings.json)
+      ansible.builtin.command:
+        cmd: >-
+          python3 {{ role_path }}/files/update-wt-font.py
+          --user "{{ win_user.stdout | trim }}"
+          --family "{{ nerd_font_family }}"
+          --match "{{ wsl_terminal_profile_match }}"
+      register: wt_update
+      changed_when: "'geaendert:' in wt_update.stdout"
+      failed_when: false
+      when: win_user.stdout | trim | length > 0 and nerd_font_family is defined
+
+    - name: Zusammenfassung
+      ansible.builtin.debug:
+        msg: >-
+          {% if win_user.stdout | trim | length == 0 %}
+          Windows-User nicht gefunden (/mnt/c/Users leer/unzugaenglich) - Font liegt
+          unter {{ ansible_user_dir }}/nerd-fonts, manuell installieren.
+          {% elif nerd_font_family is not defined %}
+          PowerShell-Installation fehlgeschlagen: {{ font_install.stderr | default('unbekannter Fehler') }}
+          {% elif wt_update.rc != 0 %}
+          Font '{{ nerd_font_family }}' installiert, aber Windows Terminal settings.json
+          nicht gefunden/aktualisiert: {{ wt_update.stderr | default(wt_update.stdout) }}.
+          Manuell setzen: Einstellungen -> Ubuntu-Profil -> Erscheinungsbild -> Schriftart.
+          {% else %}
+          Fertig - Font '{{ nerd_font_family }}' ist nur fuer diesen Windows-User installiert
+          und nur im WSL-Terminalprofil aktiv. Neuen Tab oeffnen zum Testen.
+          {% endif %}

@@ -55,9 +55,20 @@ Shell-Aliases und Optionen: `roles/shell_config/templates/zshrc.j2`.
 
 ## Wichtig: Nerd Font unter WSL
 
-Die Font wird **nicht** in Linux installiert. Windows Terminal rendert die
-Darstellung, also muss sie Windows-seitig installiert und im Ubuntu-Profil
-ausgewaehlt werden. `./run.sh fonts` laedt sie herunter und zeigt die Schritte.
+Die Font wird **nicht** in Linux installiert - Windows Terminal rendert die
+Darstellung. `./run.sh fonts` erledigt das komplett automatisch, kein manueller
+Klick noetig:
+
+- **nur fuer den aktuellen Windows-User** installiert (Registry + `AddFontResourceW`,
+  kein Admin/UAC, kein "Fuer alle Benutzer installieren")
+- **nur im WSL-Terminalprofil** aktiviert (`font.face` wird ausschliesslich bei
+  Windows-Terminal-Profilen gesetzt, deren Name/Quelle auf `wsl_terminal_profile_match`
+  passt - Standard `Ubuntu`; PowerShell/cmd/Azure Cloud Shell bleiben unberuehrt)
+
+Kein Neustart von Windows Terminal noetig - ein neuer Tab reicht. Der
+tatsaechlich vergebene Font-Familienname wird pro Lauf aus der installierten
+Datei ausgelesen statt angenommen, weil Nerd-Fonts-Releases ihn zwischen
+Versionen aendern koennen (z.B. `CaskaydiaCove Nerd Font Mono` -> `CaskaydiaCove NFM`).
 
 ## Struktur
 

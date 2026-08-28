@@ -1,0 +1,92 @@
+param(
+    [Parameter(Mandatory=$true)][string]$SourceDir
+)
+# Installiert die {{ nerd_font_variant_suffix }}-Variante von {{ nerd_font_name }} NUR fuer
+# den aktuellen Windows-User (kein Admin/UAC, kein "Fuer alle Benutzer installieren") -
+# per Registry-Eintrag + AddFontResourceW, dem dokumentierten Weg fuer Pro-User-Fonts.
+#
+# Automatisch generiert aus roles/fonts/templates/install-fonts.ps1.j2 - nicht von Hand pflegen.
+$ErrorActionPreference = "Stop"
+
+# Ergebnis geht NICHT ueber stdout an Ansible zurueck: powershell.exe schreibt je
+# nach Aufrufkontext in einer Windows-Codepage statt UTF-8, was beim WSL/Ansible-
+# Interop schon zu kaputten Bytes in der stdout-Erfassung gefuehrt hat. Stattdessen
+# landet der Familienname in einer Datei im selben (UTF-8-)Dateisystem, aus dem
+# Ansible sie direkt liest.
+$resultPath = Join-Path $SourceDir "family-name.txt"
+Remove-Item $resultPath -ErrorAction SilentlyContinue
+
+$destDir = Join-Path $env:LOCALAPPDATA "Microsoft\Windows\Fonts"
+New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+
+Add-Type -MemberDefinition @"
+[DllImport("gdi32.dll", CharSet=CharSet.Unicode)]
+public static extern int AddFontResourceW(string lpFileName);
+[DllImport("user32.dll", CharSet=CharSet.Unicode)]
+public static extern int SendMessageTimeoutW(IntPtr hWnd, uint Msg, IntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+"@ -Name Fonts -Namespace Native
+
+Add-Type -AssemblyName System.Drawing
+$shellApp = New-Object -ComObject Shell.Application
+$familyName = $null
+
+$files = Get-ChildItem $SourceDir -Filter "*{{ nerd_font_variant_suffix }}-*.ttf" |
+    Where-Object { $_.BaseName -match "-(Regular|Bold|Italic|BoldItalic)$" }
+
+if (-not $files) {
+    throw "Keine Font-Dateien fuer Variante '{{ nerd_font_variant_suffix }}' in $SourceDir gefunden."
+}
+
+foreach ($f in $files) {
+    $destPath = Join-Path $destDir $f.Name
+
+    # Einmal registrierte Fonts haelt der Windows-Fontcache kurz offen -> Copy-Item
+    # auf eine bereits installierte, identische Datei kann mit "wird verwendet"
+    # fehlschlagen. Bei Wiederholungslaeufen nur kopieren, wenn sich die Datei
+    # geaendert hat, und einen Lock-Fehler auf einer unveraenderten Datei ignorieren
+    # statt den ganzen Lauf abzubrechen - die Datei ist dann ohnehin schon korrekt.
+    $needsCopy = -not (Test-Path $destPath) -or
+        (Get-Item $destPath).Length -ne (Get-Item $f.FullName).Length
+    if ($needsCopy) {
+        try {
+            Copy-Item $f.FullName $destPath -Force
+        } catch {
+            if (-not (Test-Path $destPath)) { throw }
+            Write-Warning "Kopieren von $($f.Name) fehlgeschlagen (Datei gesperrt) - vorhandene Datei wird verwendet."
+        }
+    }
+
+    # Anzeigename (mit Stil, z.B. "CaskaydiaCove NFM Bold") fuer den Registry-Key -
+    # Nerd Fonts kuerzt Namen zwischen Releases ab, daher aus der Datei lesen statt raten.
+    $shellItem = $shellApp.Namespace($destDir).ParseName($f.Name)
+    $displayName = $shellItem.ExtendedProperty("System.Title")
+    if (-not $displayName) { $displayName = $f.BaseName }
+
+    New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts" `
+        -Name "$displayName (TrueType)" -Value $destPath -PropertyType String -Force | Out-Null
+    [Native.Fonts]::AddFontResourceW($destPath) | Out-Null
+
+    if ($f.BaseName -match "-Regular$") {
+        # Reiner Familienname (ohne "Regular") - der Wert, den Windows Terminal in
+        # "font.face" erwartet. System.Title liefert bei dieser Font-Familie den
+        # Stilnamen mit ("... Regular"); die .NET-Fontenumeration liefert die
+        # tatsaechliche Familie, wie GDI sie zum Aufloesen von font.face benutzt.
+        $pfc = New-Object System.Drawing.Text.PrivateFontCollection
+        $pfc.AddFontFile($destPath)
+        $familyName = $pfc.Families[0].Name
+    }
+}
+
+# Laufende Prozesse (offene Terminal-Tabs) ueber die neue Font informieren -
+# kein Ab-/Anmelden noetig, damit sie sofort nutzbar ist.
+$HWND_BROADCAST = [IntPtr]0xffff
+$WM_FONTCHANGE  = 0x001D
+[IntPtr]$result = [IntPtr]::Zero
+[Native.Fonts]::SendMessageTimeoutW($HWND_BROADCAST, $WM_FONTCHANGE, [IntPtr]::Zero, $null, 2, 1000, [ref]$result) | Out-Null
+
+if (-not $familyName) {
+    throw "Regular-Datei nicht gefunden - Familienname unbekannt."
+}
+
+[System.IO.File]::WriteAllText($resultPath, $familyName, (New-Object System.Text.UTF8Encoding($false)))
+Write-Output "Familienname: $familyName (siehe $resultPath)"
