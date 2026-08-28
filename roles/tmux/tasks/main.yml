@@ -1,0 +1,22 @@
+---
+# Optional (setup_tmux: true). Statusleiste im "Pillen"-Look.
+
+- name: TPM (tmux plugin manager) installieren
+  ansible.builtin.git:
+    repo: https://github.com/tmux-plugins/tpm
+    dest: "{{ ansible_user_dir }}/.tmux/plugins/tpm"
+    depth: 1
+    version: master
+    update: false
+
+- name: tmux.conf schreiben
+  ansible.builtin.template:
+    src: tmux.conf.j2
+    dest: "{{ ansible_user_dir }}/.tmux.conf"
+    mode: "0644"
+    backup: true
+
+- name: tmux-Plugins installieren
+  ansible.builtin.command:
+    cmd: "{{ ansible_user_dir }}/.tmux/plugins/tpm/bin/install_plugins"
+    creates: "{{ ansible_user_dir }}/.tmux/plugins/tmux-powerkit"

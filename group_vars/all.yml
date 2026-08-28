@@ -1,0 +1,51 @@
+---
+# ============================================================
+#  Deine Stellschrauben. Hier drehst du, nicht in den Rollen.
+# ============================================================
+
+# --- Optionale Bereiche an/aus -------------------------------
+setup_tmux:  false        # tmux-Statusleiste (Pillen-Look) - auf true wenn gewuenscht
+setup_fonts: true         # Nerd Font herunterladen + Anleitung ausgeben
+
+# --- Shell ---------------------------------------------------
+user_shell: /usr/bin/zsh
+
+# oh-my-zsh Plugins. Custom-Plugins werden unten geklont.
+omz_plugins:
+  - git
+  - docker
+  - kubectl
+  - zsh-autosuggestions
+  - zsh-syntax-highlighting
+
+# Plugins, die per git geklont werden muessen (nicht in oh-my-zsh enthalten)
+omz_custom_plugins:
+  - name: zsh-autosuggestions
+    repo: https://github.com/zsh-users/zsh-autosuggestions
+  - name: zsh-syntax-highlighting
+    repo: https://github.com/zsh-users/zsh-syntax-highlighting
+
+# --- Starship ------------------------------------------------
+# Presets: catppuccin-powerline | tokyo-night | pastel-powerline
+#          gruvbox-rainbow | nerd-font-symbols | plain-text-symbols
+starship_preset:  catppuccin-powerline
+starship_bin_dir: /usr/local/bin
+
+# --- Pakete (Ubuntu 24.04) -----------------------------------
+apt_packages:
+  - zsh
+  - tmux
+  - git
+  - curl
+  - unzip
+  - fzf
+  - bat        # Binary heisst 'batcat' -> Alias im .zshrc-Template
+  - eza        # moderner ls
+  - fd-find    # Binary heisst 'fdfind' -> Alias im .zshrc-Template
+  - ripgrep
+  - jq
+  - make       # optional: fuer das Makefile, run.sh braucht es nicht
+
+# --- Nerd Font -----------------------------------------------
+nerd_font_name: CaskaydiaCove
+nerd_font_url: https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CascadiaCode.zip

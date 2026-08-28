@@ -1,0 +1,59 @@
+---
+# Starship-Binary + Preset. Idempotent: Preset wird nur neu geschrieben,
+# wenn sich der Wert in group_vars/all.yml tatsaechlich geaendert hat.
+
+- name: Pruefen ob starship vorhanden ist
+  ansible.builtin.command: starship --version
+  register: starship_check
+  failed_when: false
+  changed_when: false
+
+- name: Starship installieren
+  ansible.builtin.shell: |
+    set -euo pipefail
+    curl -fsSL https://starship.rs/install.sh | sh -s -- --yes --bin-dir "{{ starship_bin_dir }}"
+  args:
+    executable: /bin/bash
+  become: true
+  when: starship_check.rc != 0
+
+# ~/.config wurde in der base-Rolle angelegt - hier nur als Sicherheitsnetz,
+# falls jemand die Rolle einzeln per --tags starship laufen laesst.
+- name: Sicherstellen dass ~/.config existiert
+  ansible.builtin.file:
+    path: "{{ ansible_user_dir }}/.config"
+    state: directory
+    mode: "0755"
+
+- name: Zuletzt angewandtes Preset auslesen
+  ansible.builtin.slurp:
+    src: "{{ ansible_user_dir }}/.config/.starship-preset"
+  register: preset_marker
+  failed_when: false
+  changed_when: false
+
+- name: Aktuelle starship.toml sichern
+  ansible.builtin.copy:
+    src: "{{ ansible_user_dir }}/.config/starship.toml"
+    dest: "{{ ansible_user_dir }}/.config/starship.toml.bak"
+    remote_src: true
+    mode: "0644"
+  when:
+    - preset_marker.content is not defined
+      or (preset_marker.content | b64decode | trim) != starship_preset
+  failed_when: false
+
+- name: Starship-Preset anwenden
+  ansible.builtin.command:
+    cmd: starship preset {{ starship_preset }} -o {{ ansible_user_dir }}/.config/starship.toml
+  when:
+    - preset_marker.content is not defined
+      or (preset_marker.content | b64decode | trim) != starship_preset
+  register: preset_applied
+
+- name: Preset-Marker schreiben
+  ansible.builtin.copy:
+    content: "{{ starship_preset }}\n"
+    dest: "{{ ansible_user_dir }}/.config/.starship-preset"
+    mode: "0644"
+  when: preset_applied is changed

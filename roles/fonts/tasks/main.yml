@@ -1,0 +1,38 @@
+---
+# Unter WSL kann die Font NICHT in Linux installiert werden -
+# die Darstellung macht Windows Terminal. Wir legen sie nur bereit.
+
+- name: WSL erkennen
+  ansible.builtin.command: grep -qi microsoft /proc/version
+  register: is_wsl
+  failed_when: false
+  changed_when: false
+
+- name: Font-Verzeichnis anlegen
+  ansible.builtin.file:
+    path: "{{ ansible_user_dir }}/nerd-fonts"
+    state: directory
+    mode: "0755"
+
+- name: Nerd Font herunterladen
+  ansible.builtin.unarchive:
+    src: "{{ nerd_font_url }}"
+    dest: "{{ ansible_user_dir }}/nerd-fonts"
+    remote_src: true
+    creates: "{{ ansible_user_dir }}/nerd-fonts/LICENSE"
+
+- name: Anleitung ausgeben (WSL)
+  ansible.builtin.debug:
+    msg:
+      - "Font liegt in: {{ ansible_user_dir }}/nerd-fonts"
+      - "WSL erkannt - die Font muss WINDOWS-seitig installiert werden:"
+      - "  1. explorer.exe {{ ansible_user_dir }}/nerd-fonts"
+      - "  2. .ttf-Dateien markieren -> Rechtsklick -> 'Fuer alle Benutzer installieren'"
+      - "  3. Windows Terminal -> Einstellungen -> Ubuntu-Profil -> Erscheinungsbild"
+      - "     -> Schriftart: {{ nerd_font_name }} Nerd Font"
+  when: is_wsl.rc == 0
+
+- name: Fonts registrieren (natives Linux)
+  ansible.builtin.command: fc-cache -f
+  when: is_wsl.rc != 0
+  changed_when: true

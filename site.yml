@@ -1,0 +1,49 @@
+---
+# Workstation-Setup: Look & Convenience
+#
+# WICHTIG - die Reihenfolge der Rollen ist Absicht, nicht Zufall:
+#   1. base          Pakete + Verzeichnisse (~/.config MUSS zuerst existieren)
+#   2. zsh           oh-my-zsh + Plugins (bevor .zshrc sie referenziert)
+#   3. starship      Binary + Preset (bevor .zshrc es initialisiert)
+#   4. shell_config  schreibt .zshrc KOMPLETT NEU - haengt nie an
+#   5. tmux/fonts    optional, per Flag in group_vars/all.yml
+#
+# Genau diese Reihenfolge war das Problem beim manuellen Setup.
+- name: Workstation Setup (Look & Convenience)
+  hosts: workstation
+  gather_facts: true
+
+  vars_files:
+    - group_vars/all.yml
+
+  pre_tasks:
+    - name: Nicht als root ausfuehren
+      ansible.builtin.assert:
+        that: ansible_user_id != 'root'
+        fail_msg: "Bitte als normaler User starten - sudo wird gezielt per 'become' geholt."
+        quiet: true
+
+  roles:
+    - role: base
+      tags: [base]
+    - role: zsh
+      tags: [zsh, shell]
+    - role: starship
+      tags: [starship, shell]
+    - role: shell_config
+      tags: [shell_config, shell]
+    - role: tmux
+      tags: [tmux]
+      when: setup_tmux | bool
+    - role: fonts
+      tags: [fonts]
+      when: setup_fonts | bool
+
+  post_tasks:
+    - name: Zusammenfassung
+      ansible.builtin.debug:
+        msg:
+          - "Fertig. Oeffne ein NEUES Terminal (oder: exec zsh)."
+          - "Starship-Preset: {{ starship_preset }}"
+          - "Login-Shell:     {{ user_shell }}"
+          - "Nerd Font nicht vergessen - unter WSL ist das eine WINDOWS-seitige Einstellung."

@@ -1,0 +1,26 @@
+---
+# Pakete + Verzeichnisse. Laeuft ZUERST, weil alles andere darauf aufbaut.
+
+- name: APT-Cache aktualisieren (max. 1h alt)
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+
+- name: Basis-Pakete installieren
+  ansible.builtin.apt:
+    name: "{{ apt_packages }}"
+    state: present
+  become: true
+
+# Das hier war Problem Nr. 3 beim manuellen Setup:
+# 'starship preset -o ~/.config/starship.toml' scheitert, wenn ~/.config fehlt.
+- name: Benutzer-Verzeichnisse sicherstellen
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ ansible_user_dir }}/.config"
+    - "{{ ansible_user_dir }}/.local/bin"
+    - "{{ ansible_user_dir }}/.cache"

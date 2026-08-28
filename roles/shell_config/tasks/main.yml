@@ -1,0 +1,23 @@
+---
+# Die .zshrc wird als GANZE Datei aus dem Template geschrieben.
+#
+# Das ist der Kern der Loesung: kein 'echo >>', kein lineinfile, kein Anhaengen.
+# Damit sind vier manuelle Fehlerquellen strukturell ausgeschlossen:
+#   - Config landet in der falschen Datei (.bashrc statt .zshrc)
+#   - fehlender Newline klebt zwei Befehle zusammen
+#   - Reihenfolge kippt (starship init vor oh-my-zsh)
+#   - doppelte Eintraege bei mehrfachem Lauf
+
+- name: .zshrc aus Template schreiben
+  ansible.builtin.template:
+    src: zshrc.j2
+    dest: "{{ ansible_user_dir }}/.zshrc"
+    mode: "0644"
+    backup: true          # legt bei jeder Aenderung eine .zshrc.<timestamp>@ Kopie an
+    validate: "zsh -n %s" # Syntaxpruefung BEVOR die Datei aktiv wird
+  register: zshrc_written
+
+- name: Hinweis auf Backup
+  ansible.builtin.debug:
+    msg: "Alte .zshrc gesichert unter: {{ zshrc_written.backup_file }}"
+  when: zshrc_written.backup_file is defined

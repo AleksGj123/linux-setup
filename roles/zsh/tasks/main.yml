@@ -1,0 +1,31 @@
+---
+# oh-my-zsh + Custom-Plugins. Laeuft VOR shell_config,
+# damit die .zshrc nur Plugins referenziert, die es auch gibt.
+
+- name: oh-my-zsh installieren
+  ansible.builtin.git:
+    repo: https://github.com/ohmyzsh/ohmyzsh.git
+    dest: "{{ ansible_user_dir }}/.oh-my-zsh"
+    depth: 1
+    version: master
+    update: false          # kein ungewolltes Update bei jedem Lauf
+  register: omz_install
+
+- name: Custom-Plugins klonen
+  ansible.builtin.git:
+    repo: "{{ item.repo }}"
+    dest: "{{ ansible_user_dir }}/.oh-my-zsh/custom/plugins/{{ item.name }}"
+    depth: 1
+    version: master
+    update: false
+  loop: "{{ omz_custom_plugins }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: zsh als Login-Shell setzen
+  ansible.builtin.user:
+    name: "{{ ansible_user_id }}"
+    shell: "{{ user_shell }}"
+  become: true
+  # Genau hier ist manuell der Prompt "kaputtgegangen": Login-Shell wechselt,
+  # ~/.bashrc wird nie wieder geladen - und die Starship-Config lag noch drin.
