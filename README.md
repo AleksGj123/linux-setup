@@ -55,17 +55,47 @@ Shell-Aliases und Optionen: `roles/shell_config/templates/zshrc.j2`.
 
 ## Wichtig: Nerd Font unter WSL
 
-Die Font wird **nicht** in Linux installiert - Windows Terminal rendert die
-Darstellung. `./run.sh fonts` erledigt das komplett automatisch, kein manueller
-Klick noetig:
+Die Font wird **nicht** in Linux installiert - die Darstellung macht die
+Windows-Seite. `./run.sh fonts` erledigt das automatisch; der einzige manuelle
+Schritt ist eine UAC-Bestaetigung pro frischer Maschine:
 
-- **nur fuer den aktuellen Windows-User** installiert (Registry + `AddFontResourceW`,
-  kein Admin/UAC, kein "Fuer alle Benutzer installieren")
+- **systemweit** installiert (`C:\Windows\Fonts` + `HKLM`, Registry +
+  `AddFontResourceW`)
 - **nur im WSL-Terminalprofil** aktiviert (`font.face` wird ausschliesslich bei
   Windows-Terminal-Profilen gesetzt, deren Name/Quelle auf `wsl_terminal_profile_match`
   passt - Standard `Ubuntu`; PowerShell/cmd/Azure Cloud Shell bleiben unberuehrt)
+- zusaetzlich im **integrierten Terminal von VS Code** gesetzt
+  (`terminal.integrated.fontFamily`, abschaltbar ueber `setup_vscode_font`)
 
-Kein Neustart von Windows Terminal noetig - ein neuer Tab reicht. Der
+### Warum systemweit und nicht pro Benutzer
+
+Frueher installierte diese Rolle nur fuer den aktuellen Windows-User
+(`%LOCALAPPDATA%`, `HKCU`) - ohne UAC, aber kaputt: eine so registrierte Font
+sieht ausschliesslich GDI. Das Ergebnis war ein Prompt, der je nach Startweg
+anders aussah:
+
+| Startweg | rendert ueber | sah per-User-Font |
+|---|---|---|
+| Startmenue-Verknuepfung `Ubuntu` | conhost / GDI | ja - korrekt |
+| Windows Terminal | Paket-App, DirectWrite | nein - Icons fehlten |
+| VS Code | Chromium / DirectWrite | nein - Icons fehlten |
+
+Windows Terminal loest `font.face` dann nicht auf und faellt still auf die
+Standardfont zurueck, in der die Nerd-Font-Icons nicht enthalten sind. Deshalb
+ist die einmalige UAC-Abfrage der Preis fuer eine Darstellung, die ueberall
+stimmt. Ein Wiederholungslauf erkennt die vorhandene Installation und eskaliert
+gar nicht erst - die Abfrage kommt also wirklich nur einmal. Eine noch
+vorhandene alte per-User-Registrierung raeumt die Rolle dabei weg, damit
+dieselbe Familie nicht aus zwei Quellen kommt.
+
+Windows Terminal muss nach dem ersten Lauf **komplett beendet und neu
+gestartet** werden - ein neuer Tab genuegt nicht. Die DirectWrite-Font-Liste
+wird einmal beim Prozessstart gelesen und danach gecacht; eine Instanz, die
+schon vor der Installation lief, kennt die neue Font nicht und faellt still auf
+die Standardfont ohne Icons zurueck. `settings.json` selbst wird zwar live
+nachgeladen, die Font-Liste nicht - deshalb sieht der Prompt trotz korrekter
+Einstellung unveraendert aus. Fuer VS Code gilt dasselbe: "Fenster neu laden"
+reicht nicht, VS Code muss beendet und neu gestartet werden. Der
 tatsaechlich vergebene Font-Familienname wird pro Lauf aus der installierten
 Datei ausgelesen statt angenommen, weil Nerd-Fonts-Releases ihn zwischen
 Versionen aendern koennen (z.B. `CaskaydiaCove Nerd Font Mono` -> `CaskaydiaCove NFM`).

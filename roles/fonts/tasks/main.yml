@@ -1,9 +1,16 @@
 ---
-# Unter WSL kann die Font nicht in Linux "installiert" werden - die Darstellung
-# macht Windows Terminal. Wir installieren sie deshalb Windows-seitig, aber:
-#   - NUR fuer den aktuellen Windows-User (kein Admin/UAC, kein Rechtsklick)
-#   - NUR im WSL-Terminalprofil (font.face nur dort, PowerShell/cmd unberuehrt)
-# Beides vollautomatisch, kein manueller Schritt mehr noetig.
+# Unter WSL kann die Font nicht in Linux "installiert" werden - die Darstellung macht
+# die Windows-Seite. Wir installieren sie deshalb Windows-seitig:
+#   - SYSTEMWEIT (C:\Windows\Fonts + HKLM), einmalige UAC-Abfrage pro Maschine
+#   - aktiviert NUR im WSL-Terminalprofil (font.face nur dort, PowerShell/cmd unberuehrt)
+#   - zusaetzlich im integrierten Terminal von VS Code
+# Vollautomatisch bis auf die UAC-Bestaetigung.
+#
+# Warum nicht mehr pro Benutzer (%LOCALAPPDATA%, HKCU, ohne UAC): eine so registrierte
+# Font sieht nur GDI - also conhost bzw. die Ubuntu-Verknuepfung. Windows Terminal
+# (Paket-App, DirectWrite) und VS Code (Chromium/DirectWrite) loesen den Familiennamen
+# dann nicht auf und fallen still auf die Standardfont zurueck, in der die
+# Nerd-Font-Icons fehlen: derselbe Prompt sieht je nach Startweg anders aus.
 
 - name: WSL erkennen
   ansible.builtin.command: grep -qi microsoft /proc/version
@@ -66,7 +73,7 @@
         fonts_unc: "{{ unc_paths.stdout_lines[1].split('=', 1)[1] }}"
       when: win_user.stdout | trim | length > 0
 
-    - name: Font per-User installieren (Registry + AddFontResourceW)
+    - name: Font systemweit installieren (Registry + AddFontResourceW, mit UAC)
       # argv statt cmd-String: cmd als String parst das Modul mit shlex, das
       # Backslashes in UNC-Windows-Pfaden (\\wsl.localhost\...) verstuemmelt,
       # bevor PowerShell sie zu sehen bekommt. argv umgeht jedes Shell-Parsing.
@@ -81,7 +88,9 @@
           - -SourceDir
           - "{{ fonts_unc }}"
       register: font_install
-      changed_when: true
+      # Der Installer meldet einen Vorab-Treffer, statt erneut zu eskalieren - so bleibt
+      # ein Wiederholungslauf ehrlich "ok" und nicht dauerhaft "changed".
+      changed_when: "'Bereits systemweit installiert' not in font_install.stdout"
       when: win_user.stdout | trim | length > 0
 
     - name: Ergebnisdatei des Installers pruefen
@@ -98,6 +107,20 @@
       ansible.builtin.set_fact:
         nerd_font_family: "{{ lookup('file', ansible_user_dir + '/nerd-fonts/family-name.txt') | trim }}"
       when: family_file is defined and family_file.stat.exists
+
+    - name: Font im integrierten Terminal von VS Code setzen
+      ansible.builtin.command:
+        cmd: >-
+          python3 {{ role_path }}/files/update-vscode-font.py
+          --user "{{ win_user.stdout | trim }}"
+          --family "{{ nerd_font_family }}"
+      register: vscode_update
+      changed_when: "'geaendert:' in vscode_update.stdout"
+      failed_when: false
+      when:
+        - setup_vscode_font | bool
+        - win_user.stdout | trim | length > 0
+        - nerd_font_family is defined
 
     - name: Font nur im WSL-Terminalprofil setzen (Windows Terminal settings.json)
       ansible.builtin.command:
@@ -124,6 +147,12 @@
           nicht gefunden/aktualisiert: {{ wt_update.stderr | default(wt_update.stdout) }}.
           Manuell setzen: Einstellungen -> Ubuntu-Profil -> Erscheinungsbild -> Schriftart.
           {% else %}
-          Fertig - Font '{{ nerd_font_family }}' ist nur fuer diesen Windows-User installiert
-          und nur im WSL-Terminalprofil aktiv. Neuen Tab oeffnen zum Testen.
+          Fertig - Font '{{ nerd_font_family }}' ist systemweit installiert und im
+          WSL-Terminalprofil{% if setup_vscode_font | bool %} sowie im VS-Code-Terminal{% endif %} aktiv.
+          WICHTIG: Windows Terminal komplett beenden und neu starten - ein neuer Tab
+          genuegt nicht. Die Font-Liste wird nur einmal beim Prozessstart gelesen, eine
+          laufende Instanz kennt die frisch installierte Font nicht und faellt still auf
+          die Standardfont ohne Icons zurueck.{% if setup_vscode_font | bool %}
+          Fuer VS Code gilt dasselbe: Fenster neu laden reicht nicht, VS Code beenden
+          und neu starten.{% endif %}
           {% endif %}

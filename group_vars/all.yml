@@ -5,7 +5,8 @@
 
 # --- Optionale Bereiche an/aus -------------------------------
 setup_tmux:  false        # tmux-Statusleiste (Pillen-Look) - auf true wenn gewuenscht
-setup_fonts: true         # Nerd Font herunterladen + Anleitung ausgeben
+setup_fonts: true         # Nerd Font systemweit installieren (einmal UAC) + aktivieren
+setup_vscode_font: true   # Font auch im integrierten Terminal von VS Code setzen
 
 # --- Shell ---------------------------------------------------
 user_shell: /usr/bin/zsh
@@ -47,8 +48,9 @@ apt_packages:
   - make       # optional: fuer das Makefile, run.sh braucht es nicht
 
 # --- Nerd Font -----------------------------------------------
-# Wird unter WSL automatisch NUR fuer diesen Windows-User installiert (kein
-# Admin/UAC) und NUR im WSL-Terminalprofil aktiviert (nicht PowerShell/cmd).
+# Wird unter WSL automatisch systemweit installiert (eine UAC-Abfrage pro Maschine -
+# nur so sehen Windows Terminal und VS Code die Font) und NUR im WSL-Terminalprofil
+# aktiviert, nicht in PowerShell/cmd.
 nerd_font_name: CaskaydiaCove
 nerd_font_url: https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CascadiaCode.zip
 
